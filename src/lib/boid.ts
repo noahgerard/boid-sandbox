@@ -49,27 +49,50 @@ class Vector {
 function random(a: number, b?: number) {
   return b === undefined ? Math.random() * a : a + Math.random() * (b - a);
 }
-function dist(x1: number, y1: number, x2: number, y2: number) {
-  return Math.hypot(x2 - x1, y2 - y1);
+// Toroidal distance function
+function dist(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  width: number,
+  height: number,
+) {
+  let dx = Math.abs(x2 - x1);
+  let dy = Math.abs(y2 - y1);
+  if (dx > width / 2) dx = width - dx;
+  if (dy > height / 2) dy = height - dy;
+  return Math.hypot(dx, dy);
 }
 
 class Boid {
   position: Vector;
   velocity: Vector;
   acceleration: Vector;
+  // Maximum steering force
   maxForce: number;
-  maxSpeed: number;
-  isPredator: boolean;
-  perceptionRadius: number;
+  // Maximum speed
+  maxVel: number;
+  // Perception radius for alignment, cohesion, and separation
+  alignRadius: number;
+  cohesionRadius: number;
+  sepRadius: number;
+
+  width: number;
+  height: number;
+
   constructor(width: number, height: number) {
     this.position = new Vector(random(width), random(height));
     this.velocity = Vector.random2D();
     this.velocity.setMag(random(0.8, 1));
     this.acceleration = new Vector(0, 0);
-    this.maxForce = 0.01;
-    this.maxSpeed = 1;
-    this.isPredator = false;
-    this.perceptionRadius = 100;
+    this.maxForce = 0.05;
+    this.maxVel = 0.5;
+    this.alignRadius = 50;
+    this.cohesionRadius = 50;
+    this.sepRadius = 25;
+    this.width = width;
+    this.height = height;
   }
 
   edges(width: number, height: number) {
@@ -77,54 +100,6 @@ class Boid {
     else if (this.position.x < 0) this.position.x = width;
     if (this.position.y > height) this.position.y = 0;
     else if (this.position.y < 0) this.position.y = height;
-  }
-
-  seekPrey(boids: Boid[]): Vector {
-    const steering = new Vector(0, 0);
-    let total = 0;
-    if (!this.isPredator) return steering;
-    for (const other of boids) {
-      const d = dist(
-        this.position.x,
-        this.position.y,
-        other.position.x,
-        other.position.y,
-      );
-      if (other !== this && d < this.perceptionRadius) {
-        if (!other.isPredator) {
-          steering.add(other.position);
-          total++;
-        }
-      }
-    }
-    if (total > 0) {
-      steering.div(total);
-      steering.sub(this.position);
-      steering.setMag(this.maxSpeed);
-      steering.sub(this.velocity);
-      steering.limit(this.maxForce);
-    }
-    return steering;
-  }
-
-  avoidPredators(boids: Boid[]): Vector {
-    const steering = new Vector(0, 0);
-    if (this.isPredator) return steering;
-    for (const other of boids) {
-      if (!other.isPredator) continue;
-      const d = dist(
-        this.position.x,
-        this.position.y,
-        other.position.x,
-        other.position.y,
-      );
-      if (other !== this && d < this.perceptionRadius) {
-        const diff = Vector.sub(this.position, other.position);
-        diff.div(d);
-        steering.add(diff);
-      }
-    }
-    return steering;
   }
 
   separation(boids: Boid[]): Vector {
@@ -136,8 +111,10 @@ class Boid {
         this.position.y,
         other.position.x,
         other.position.y,
+        this.width,
+        this.height,
       );
-      if (other !== this && d < this.perceptionRadius) {
+      if (other !== this && d < this.sepRadius) {
         const diff = Vector.sub(this.position, other.position);
         diff.div(d);
         steering.add(diff);
@@ -146,7 +123,7 @@ class Boid {
     }
     if (total > 0) {
       steering.div(total);
-      steering.setMag(this.maxSpeed);
+      steering.setMag(this.maxVel);
       steering.sub(this.velocity);
       steering.limit(this.maxForce);
     }
@@ -162,18 +139,18 @@ class Boid {
         this.position.y,
         other.position.x,
         other.position.y,
+        this.width,
+        this.height,
       );
-      if (other !== this && d < this.perceptionRadius) {
-        if (this.isPredator === other.isPredator) {
-          steering.add(other.position);
-          total++;
-        }
+      if (other !== this && d < this.cohesionRadius) {
+        steering.add(other.position);
+        total++;
       }
     }
     if (total > 0) {
       steering.div(total);
       steering.sub(this.position);
-      steering.setMag(this.maxSpeed);
+      steering.setMag(this.maxVel);
       steering.sub(this.velocity);
       steering.limit(this.maxForce);
     }
@@ -189,15 +166,17 @@ class Boid {
         this.position.y,
         other.position.x,
         other.position.y,
+        this.width,
+        this.height,
       );
-      if (other !== this && d < this.perceptionRadius) {
+      if (other !== this && d < this.alignRadius) {
         total++;
         steering.add(other.velocity);
       }
     }
     if (total > 0) {
       steering.div(total);
-      steering.setMag(this.maxSpeed);
+      steering.setMag(this.maxVel);
       steering.sub(this.velocity);
       steering.limit(this.maxForce);
     }
@@ -207,32 +186,23 @@ class Boid {
   flock(
     boids: Boid[],
     options: {
-      alignWeight: 1.0;
-      cohesionWeight: 1.0;
-      separationWeight: 1.5;
-      avoidPredatorsWeigh: 2.0;
-      seekPreyWeight: 1.0;
+      alignWeight: number;
+      cohesionWeight: number;
+      separationWeight: number;
     },
   ) {
-    const alignment = this.align(boids).mult(options.alignWeight); // weight: 1.0
-    const cohesion = this.cohesion(boids).mult(options.cohesionWeight); // weight: 1.0
-    const separation = this.separation(boids).mult(options.separationWeight); // weight: 1.5
-    const avoidPredators = this.avoidPredators(boids).mult(
-      options.avoidPredatorsWeigh,
-    );
-    const seekPrey = this.seekPrey(boids).mult(options.seekPreyWeight); // weight: 1.0
+    const alignment = this.align(boids).mult(options.alignWeight);
+    const cohesion = this.cohesion(boids).mult(options.cohesionWeight);
+    const separation = this.separation(boids).mult(options.separationWeight);
 
-    
     this.acceleration.add(alignment);
     this.acceleration.add(cohesion);
     this.acceleration.add(separation);
-    this.acceleration.add(avoidPredators);
-    this.acceleration.add(seekPrey);
   }
 
   update() {
     this.velocity.add(this.acceleration);
-    this.velocity.limit(this.maxSpeed);
+    this.velocity.limit(this.maxVel);
     this.position.add(this.velocity);
 
     // Reset acceleration to 0 each cycle

@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Stage, Layer, Rect, Circle, Text } from "react-konva";
+import { Stage, Layer, Circle } from "react-konva";
 import Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { Boid } from "./lib/boid";
+import { Card, CardContent } from "./components/ui/card";
+import { Slider } from "./components/ui/slider";
 
 function App() {
   const stageRef = useRef<Konva.Stage | null>(null);
+  const [alignWeight, setAlignWeight] = useState(1);
+  const [cohesionWeight, setCohesionWeight] = useState(1);
+  const [separationWeight, setSeparationWeight] = useState(1);
 
   const [boids, setBoids] = useState<Boid[]>([]);
   const [fps, setFps] = useState(0);
@@ -29,11 +34,17 @@ function App() {
         // Create new boid instances to avoid mutating state directly
         const newBoids = prevBoids.map((b) =>
           Object.assign(Object.create(Object.getPrototypeOf(b)), b),
-        );
+        ) as Boid[];
+
         newBoids.forEach((boid) => {
-          boid.flock(newBoids);
-          boid.update();
           boid.edges(window.innerWidth, window.innerHeight);
+
+          boid.flock(newBoids, {
+            alignWeight,
+            cohesionWeight,
+            separationWeight,
+          });
+          boid.update();
         });
         return newBoids;
       });
@@ -49,10 +60,10 @@ function App() {
 
       animationId = requestAnimationFrame(animate);
     }
-    
+
     animate();
     return () => cancelAnimationFrame(animationId);
-  }, []);
+  }, [alignWeight, cohesionWeight, separationWeight]);
 
   // Snippet from Konva docs
   const handleWheel = (e: KonvaEventObject<WheelEvent>) => {
@@ -101,11 +112,6 @@ function App() {
         className="border-2 border-black fixed"
       >
         <Layer>
-          <Rect x={20} y={20} width={100} height={100} fill="red" draggable />
-          <Circle x={200} y={200} radius={50} fill="green" draggable />
-          <Text text="Hello, Konva!" fontSize={24} x={300} y={300} />
-        </Layer>
-        <Layer>
           {boids.map((boid, index) => (
             <Circle
               key={index}
@@ -118,9 +124,49 @@ function App() {
           ))}
         </Layer>
       </Stage>
-      <div className="absolute z-20 w-[50px] h-[50px] bg-red-500 flex items-center justify-center text-white text-lg select-none">
-        {fps} FPS
-      </div>
+      <Card className="absolute top-20 right-20 z-10 w-[20em]">
+        <CardContent>
+          <p>{fps} FPS</p>
+          <div className="w-full flex flex-col gap-2">
+            <label htmlFor="align">Align: {alignWeight}</label>
+            <Slider
+              id="align"
+              defaultValue={[1]}
+              min={0.1}
+              max={5}
+              step={0.1}
+              value={[alignWeight]}
+              onValueChange={(setValue) => {
+                setAlignWeight(setValue[0]);
+              }}
+            />
+            <label htmlFor="cohesion">Cohesion: {cohesionWeight}</label>
+            <Slider
+              id="cohesion"
+              defaultValue={[1]}
+              min={0.1}
+              max={5}
+              step={0.1}
+              value={[cohesionWeight]}
+              onValueChange={(setValue) => {
+                setCohesionWeight(setValue[0]);
+              }}
+            />
+            <label htmlFor="separation">Separation: {separationWeight}</label>
+            <Slider
+              id="separation"
+              defaultValue={[1]}
+              min={0.1}
+              max={5}
+              step={0.1}
+              value={[separationWeight]}
+              onValueChange={(setValue) => {
+                setSeparationWeight(setValue[0]);
+              }}
+            />
+          </div>
+        </CardContent>
+      </Card>
     </>
   );
 }
